@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>System Monitor</title>
+
+<style>
+:root {
+    --green: #00ff88;
+    --bg: #010503;
+    --panel: #031a10;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html, body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+}
+
+body {
+    background: radial-gradient(circle at top, #041f13, var(--bg));
+    color: var(--green);
+    font-family: "Courier New", monospace;
+    overflow: hidden;
+}
+
+/* ===== SCANLINES ===== */
+body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+        to bottom,
+        rgba(0,255,136,0.04),
+        rgba(0,255,136,0.04) 1px,
+        transparent 1px,
+        transparent 3px
+    );
+    pointer-events: none;
+    animation: scan 6s linear infinite;
+}
+
+@keyframes scan {
+    from { background-position-y: 0; }
+    to { background-position-y: 120px; }
+}
+
+/* ===== CENTER LAYOUT ===== */
+.app {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+/* ===== HEADER ===== */
+h1 {
+    margin: 0 0 20px;
+    letter-spacing: 4px;
+    text-shadow: 0 0 12px var(--green);
+    animation: flicker 3s infinite;
+}
+
+@keyframes flicker {
+    0%, 100% { opacity: 1; }
+    96% { opacity: 0.85; }
+    97% { opacity: 0.6; }
+    98% { opacity: 1; }
+}
+
+/* ===== PANEL ===== */
+.panel {
+    width: 90%;
+    max-width: 1000px;
+    height: 70%;
+    background: linear-gradient(180deg, #041f13, var(--panel));
+    border: 1px solid var(--green);
+    border-radius: 8px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 0 30px rgba(0,255,136,0.2);
+    animation: slideUp 0.8s ease;
+}
+
+@keyframes slideUp {
+    from { transform: translateY(30px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+/* ===== CONTROLS ===== */
+.controls {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 15px;
+}
+
+input, button {
+    background: black;
+    color: var(--green);
+    border: 1px solid var(--green);
+    padding: 8px 12px;
+    font-family: inherit;
+}
+
+input:focus {
+    outline: none;
+    box-shadow: 0 0 10px var(--green);
+}
+
+button {
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+}
+
+button::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+        120deg,
+        transparent,
+        rgba(0,255,136,0.4),
+        transparent
+    );
+    transform: translateX(-100%);
+}
+
+button:hover::after {
+    animation: sweep 0.6s;
+}
+
+@keyframes sweep {
+    to { transform: translateX(100%); }
+}
+
+/* ===== OUTPUT ===== */
+pre {
+    flex: 1;
+    margin: 0;
+    background: black;
+    padding: 15px;
+    border-left: 4px solid var(--green);
+    overflow-y: auto;
+    text-shadow: 0 0 6px rgba(0,255,136,0.6);
+    animation: glowPulse 2.5s infinite alternate;
+}
+
+@keyframes glowPulse {
+    from { box-shadow: 0 0 10px rgba(0,255,136,0.2); }
+    to { box-shadow: 0 0 20px rgba(0,255,136,0.5); }
+}
+
+/* ===== CURSOR ===== */
+.cursor::after {
+    content: "█";
+    animation: blink 1s steps(1) infinite;
+}
+
+@keyframes blink {
+    50% { opacity: 0; }
+}
+</style>
+</head>
+
+<body>
+
+<div class="app">
+    <h1>SYSTEM MONITOR</h1>
+
+    <div class="panel">
+        <div class="controls">
+            <input type="file" id="fileInput" accept=".log">
+            <label>
+                Minutes:
+                <input type="number" id="minutesInput" value="10" min="1">
+            </label>
+            <button id="runBtn">EXECUTE</button>
+        </div>
+
+        <pre id="output" class="cursor">> Awaiting input...</pre>
+    </div>
+</div>
+
+<script>
+const fileInput = document.getElementById("fileInput");
+const minutesInput = document.getElementById("minutesInput");
+const output = document.getElementById("output");
+const runBtn = document.getElementById("runBtn");
+
+function stats(arr) {
+    if (!arr.length) return { min: "N/A", max: "N/A", avg: "N/A" };
+    return {
+        min: Math.min(...arr),
+        max: Math.max(...arr),
+        avg: (arr.reduce((a,b)=>a+b,0)/arr.length).toFixed(2)
+    };
+}
+
+function typeOut(text) {
+    output.textContent = "";
+    let i = 0;
+    const timer = setInterval(() => {
+        output.textContent += text[i++];
+        if (i >= text.length) clearInterval(timer);
+    }, 5);
+}
+
+runBtn.onclick = () => {
+    const file = fileInput.files[0];
+    const minutes = Number(minutesInput.value);
+
+    if (!file) {
+        alert("Select system_monitor_log.log first");
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+        const cutoff = Date.now() - minutes * 60000;
+
+        const cpuU=[], cpuT=[], gpuT=[], mem=[];
+        const gpuUsage = [], gpuMem = [];
+
+        reader.result.split("\n").forEach(line => {
+            const t = line.match(/^\[(.*?)\]/);
+            if (!t) return;
+
+            const ts = new Date(t[1].replace(/-/g, ":")).getTime();
+            if (ts < cutoff) return;
+
+            const cpuUsageMatch = line.match(/CPU_Usage:(\d+\.?\d*)%/);
+            const cpuTempMatch = line.match(/CPU_Temp:\+(\d+\.?\d*)/);
+            const gpuUsageMatch = line.match(/GPU_Usage:Gpu : (\d+)\s*%/i);
+            const gpuMemMatch = line.match(/GPU_Usage:.*Memory : (\d+)\s*%/i);
+            const gpuTempMatch = line.match(/GPU_Temp:(\d+)/);
+            const memMatch = line.match(/MEM_Used:(\d+)/);
+
+            if (cpuUsageMatch) cpuU.push(+cpuUsageMatch[1]);
+            if (cpuTempMatch) cpuT.push(+cpuTempMatch[1]);
+            if (gpuUsageMatch) gpuUsage.push(+gpuUsageMatch[1]);
+            if (gpuMemMatch) gpuMem.push(+gpuMemMatch[1]);
+            if (gpuTempMatch) gpuT.push(+gpuTempMatch[1]);
+            if (memMatch) mem.push(+memMatch[1]);
+        });
+
+        const report = `
+> ANALYSIS COMPLETE
+> WINDOW: ${minutes} MINUTES
+
+CPU USAGE (%)
+  MIN: ${stats(cpuU).min}
+  MAX: ${stats(cpuU).max}
+  AVG: ${stats(cpuU).avg}
+
+CPU TEMP (°C)
+  MIN: ${stats(cpuT).min}
+  MAX: ${stats(cpuT).max}
+  AVG: ${stats(cpuT).avg}
+
+GPU USAGE (%)
+  MIN: ${stats(gpuUsage).min}
+  MAX: ${stats(gpuUsage).max}
+  AVG: ${stats(gpuUsage).avg}
+
+GPU MEMORY (%)
+  MIN: ${stats(gpuMem).min}
+  MAX: ${stats(gpuMem).max}
+  AVG: ${stats(gpuMem).avg}
+
+GPU TEMP (°C)
+  MIN: ${stats(gpuT).min}
+  MAX: ${stats(gpuT).max}
+  AVG: ${stats(gpuT).avg}
+
+MEMORY USED (MB)
+  MIN: ${stats(mem).min}
+  MAX: ${stats(mem).max}
+  AVG: ${stats(mem).avg}
+`;
+
+        typeOut(report.trim());
+    };
+
+    reader.readAsText(file);
+};
+</script>
+
+</body>
+</html>
