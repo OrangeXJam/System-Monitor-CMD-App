@@ -20,9 +20,10 @@ A simple app to show the components of your machine and their metrics status.
    - This will install the required libraries and run the app automatically.
 
 ### macOS
-1. Open a terminal.  
-2. Go to the `System-Monitor-MAC` folder.  
-3. Run `run_app.sh`.
+1. Open Docker.
+2. Open a terminal.  
+3. Go to the `System-Monitor-MAC` folder.  
+4. Run `run_app.sh`.
 
 ---
 
